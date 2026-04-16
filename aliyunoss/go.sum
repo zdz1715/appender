@@ -1,0 +1,4 @@
+github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.4.1 h1:wF5rZUhhahzJiRSeLSCQhAkaDBXLa/R893C/ZmEpGcE=
+github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.4.1/go.mod h1:FTzydeQVmR24FI0D6XWUOMKckjXehM/jgMn1xC+DA9M=
+golang.org/x/time v0.4.0 h1:Z81tqI5ddIoXDPvVQ7/7CC9TnLM7ubaFG2qXYd5BbYY=
+golang.org/x/time v0.4.0/go.mod h1:3BpzKBy/shNhVucY/MWOyx10tF3SFh9QdLuxbVysPQM=
