@@ -53,14 +53,12 @@ func TestStreamUploader(t *testing.T) {
 			WithInterval(100*time.Millisecond),
 		)
 
-		stopCh := make(chan struct{})
 		go func() {
-			if err := uploader.Run(ctx, "test-basic", stopCh); err != nil {
+			if err := uploader.Run(ctx, "test-basic"); err != nil {
 				t.Error(err)
 			}
 		}()
 
-		stopCh <- struct{}{}
 		<-uploader.Done() // Wait for upload to complete
 
 		if string(mock.data) != input {
@@ -81,14 +79,12 @@ func TestStreamUploader(t *testing.T) {
 			WithUploadChunkSize(10),
 		)
 
-		stopCh := make(chan struct{})
 		go func() {
-			if err := uploader.Run(ctx, "test-basic", stopCh); err != nil {
+			if err := uploader.Run(ctx, "test-basic"); err != nil {
 				t.Error(err)
 			}
 		}()
 
-		stopCh <- struct{}{}
 		<-uploader.Done() // Wait for upload to complete
 
 		// First chunk should be description
@@ -101,7 +97,7 @@ func TestStreamUploader(t *testing.T) {
 		}
 	})
 
-	t.Run("Stop signal handling", func(t *testing.T) {
+	t.Run("EOF handling", func(t *testing.T) {
 		mock := &mockDriver{}
 
 		// Create a reader that produces data slowly
@@ -117,23 +113,19 @@ func TestStreamUploader(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
-		// Write some data
+		// Write some data then close to signal EOF
 		go func() {
 			writer.Write([]byte("Line 1\n"))
 			time.Sleep(100 * time.Millisecond)
 			writer.Write([]byte("Line 2\n"))
 			time.Sleep(100 * time.Millisecond)
-			// Send stop signal
 			writer.Close() // Close to signal EOF
 		}()
 
-		stopCh := make(chan struct{})
-		close(stopCh) // Send stop immediately
-
-		go uploader.Run(ctx, "test-stop", stopCh)
+		go uploader.Run(ctx, "test-eof")
 		<-uploader.Done() // Wait for upload to complete
 
-		// Verify some data was uploaded
+		// Verify data was uploaded
 		if len(mock.data) == 0 {
 			t.Error("Expected some data to be uploaded")
 		}
@@ -150,10 +142,9 @@ func TestStreamUploader(t *testing.T) {
 		)
 
 		ctx, cancel := context.WithCancel(context.Background())
-		stopCh := make(chan struct{})
 		cancel()
 
-		err := uploader.Run(ctx, "test-cancel", stopCh)
+		err := uploader.Run(ctx, "test-cancel")
 		if err != context.Canceled {
 			t.Errorf("Expected context.Canceled error, got %v", err)
 		}
@@ -210,8 +201,7 @@ func TestStreamUploaderNilDriver(t *testing.T) {
 	// Uploader with nil driver should not panic
 	uploader := NewStreamUploader(reader, nil)
 
-	stopCh := make(chan struct{})
-	err := uploader.Run(ctx, "test-nil", stopCh)
+	err := uploader.Run(ctx, "test-nil")
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}

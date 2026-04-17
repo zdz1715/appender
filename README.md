@@ -19,6 +19,11 @@
 - **StreamUploader**：适合有限数据源（如管道、网络流），遇到 EOF 会自动停止
 - **FileFollower**：适合持续增长的日志文件，会永久运行直到手动停止
 
+## 使用
+```shell 
+go get github.com/zdz1715/appender
+```
+
 ## 核心概念
 
 ### Driver 接口
@@ -59,17 +64,16 @@ import (
     "context"
     "os"
     "time"
-    
-    "your-project/pkg/appender"
+
+    "github.com/zdz1715/appender"
 )
 
 func exampleStreamUploader() {
     ctx := context.Background()
-    stopCh := make(chan struct{})
-    
+
     // 假设有一个实现了 Driver 接口的存储后端
     var storage appender.Driver
-    
+
     // 创建 StreamUploader（从 os.Stdin 读取）
     uploader := appender.NewStreamUploader(
         os.Stdin,
@@ -79,16 +83,12 @@ func exampleStreamUploader() {
         appender.WithInterval(500*time.Millisecond), // 500ms 上传间隔
         appender.WithDesc([]byte("# Log file header\n")), // 添加描述信息
     )
-    
-    // 启动上传
-    go uploader.Run(ctx, "log-20240416", stopCh)
-    
-    // 可以使用 Done() 等待上传完成
-    // <-uploader.Done()
-    
-    // 或者手动停止
-    // close(stopCh)
-    // <-uploader.Done()
+
+    // 启动上传，遇到 EOF 自动停止
+    err := uploader.Run(ctx, "log-20240416")
+    if err != nil {
+        // 处理错误
+    }
 }
 ```
 
@@ -238,7 +238,7 @@ func exampleAliyunOSS() {
 - 会**永久运行**，持续检查文件大小变化
 - 即使文件到达 EOF，也会每隔 `interval` 时间重新检查
 - **必须手动停止**：`close(stopCh)` 或取消 context
-
+- 能够处理文件被截断的情况（如日志轮转），会自动调整读取位置
 ## 配置选项
 
 ### WithUploadChunkSize(chunkSize int)
@@ -265,26 +265,9 @@ func exampleAliyunOSS() {
 
 默认值：空
 ## 注意事项
-
-### FileFollower 必须手动停止
-
-**这是最重要的注意事项**：
-
-- FileFollower 会**永久运行**，不会自动退出
-- 即使文件已经到达 EOF，它也会每隔 `interval` 时间检查文件大小变化
-- **必须**通过以下方式之一停止：
-  1. 关闭 stop channel：`close(stopCh)`
-  2. 取消 context：`cancel()` 或 `ctx.Cancel()`
-  3. 程序退出
-
-
 ### 并发安全
 
 当前实现**不是并发安全的**，不要在多个 goroutine 中同时调用同一个实例的方法。
-
-### 文件截断
-
-FileFollower 能够处理文件被截断的情况（如日志轮转），会自动调整读取位置。
 
 ### 性能考虑
 

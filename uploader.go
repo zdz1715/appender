@@ -144,7 +144,7 @@ func (u *StreamUploader) readAndUpload(ctx context.Context, id string) error {
 	return nil
 }
 
-func (u *StreamUploader) Run(ctx context.Context, id string, stop <-chan struct{}) error {
+func (u *StreamUploader) Run(ctx context.Context, id string) error {
 	defer close(u.done)
 	if err := u.delete(ctx, id); err != nil {
 		return err
@@ -158,20 +158,6 @@ func (u *StreamUploader) Run(ctx context.Context, id string, stop <-chan struct{
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-stop:
-			for {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				default:
-					if err := u.readline(ctx, id); err != nil {
-						if err == io.EOF {
-							return u.upload(ctx, id)
-						}
-						return err
-					}
-				}
-			}
 		default:
 			if err := u.readline(ctx, id); err != nil {
 				if err == io.EOF {

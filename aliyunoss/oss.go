@@ -86,6 +86,10 @@ func (c *Client) Get(ctx context.Context, id string) (*appender.Metadata, error)
 	}, nil
 }
 
+func (c *Client) V2Client() *oss.Client {
+	return c.cc
+}
+
 func (c *Client) Append(ctx context.Context, id string, data []byte, offset int64) error {
 	key := c.key(id)
 	_, err := c.cc.AppendObject(ctx, &oss.AppendObjectRequest{
