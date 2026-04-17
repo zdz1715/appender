@@ -76,6 +76,26 @@ func finish(appender Appender, ctx context.Context, id string) error {
 	return nil
 }
 
+func get(appender Appender, ctx context.Context, id string) (*Metadata, error) {
+	if appender == nil {
+		return nil, fmt.Errorf("appender: type %T does not implement Get()", appender)
+	}
+	if getter, ok := appender.(Getter); ok {
+		return getter.Get(ctx, id)
+	}
+	return nil, fmt.Errorf("appender: type %T does not implement Get()", appender)
+}
+
+func getContent(appender Appender, ctx context.Context, id string) (io.ReadCloser, error) {
+	if appender == nil {
+		return nil, fmt.Errorf("appender: type %T does not implement GetContent()", appender)
+	}
+	if getter, ok := appender.(Getter); ok {
+		return getter.GetContent(ctx, id)
+	}
+	return nil, fmt.Errorf("appender: type %T does not implement GetContent()", appender)
+}
+
 func del(appender Appender, ctx context.Context, id string) error {
 	if appender == nil {
 		return nil
@@ -84,4 +104,32 @@ func del(appender Appender, ctx context.Context, id string) error {
 		return cc.Delete(ctx, id)
 	}
 	return nil
+}
+
+type AppendDriver struct {
+	appender Appender
+}
+
+func (a *AppendDriver) Append(ctx context.Context, id string, data []byte, offset int64) error {
+	return a.appender.Append(ctx, id, data, offset)
+}
+
+func (a *AppendDriver) Delete(ctx context.Context, id string) error {
+	return del(a.appender, ctx, id)
+}
+
+func (a *AppendDriver) Finish(ctx context.Context, id string) error {
+	return finish(a.appender, ctx, id)
+}
+
+func (a *AppendDriver) Get(ctx context.Context, id string) (*Metadata, error) {
+	return get(a.appender, ctx, id)
+}
+
+func (a *AppendDriver) GetContent(ctx context.Context, id string) (io.ReadCloser, error) {
+	return getContent(a.appender, ctx, id)
+}
+
+func NewAppendDriver(appender Appender) Driver {
+	return &AppendDriver{appender: appender}
 }
