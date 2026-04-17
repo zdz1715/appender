@@ -15,7 +15,7 @@ type Metadata struct {
 
 // Driver 组合了所有接口，提供完整功能
 // 实现者可以选择性实现需要的接口
-type Driver struct {
+type Driver interface {
 	Getter
 	Deleter
 	Appender
