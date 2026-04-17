@@ -183,7 +183,7 @@ type Driver struct {
 
 #### 已实现驱动列表
 - [File Driver](./file_driver.md): 存储为本地文件
-- [aliyunoss](./aliyunoss/README.md): 上传到阿里云OSS
+- [aliyunoss](https://github.com/zdz1715/go-aliyunoss): 上传到阿里云OSS
 
 ### Metadata 结构
 
