@@ -111,3 +111,7 @@ func (c *Client) Delete(ctx context.Context, id string) error {
 
 	return err
 }
+
+func (c *Client) Finish(ctx context.Context, id string) error {
+	return nil
+}

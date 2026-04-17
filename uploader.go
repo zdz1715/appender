@@ -3,6 +3,7 @@ package appender
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"time"
 )
@@ -47,7 +48,7 @@ func WithInterval(interval time.Duration) UploaderOption {
 }
 
 type StreamUploader struct {
-	cc   Driver
+	cc   Appender
 	opts uploaderOptions
 
 	reader *bufio.Reader
@@ -61,7 +62,7 @@ type StreamUploader struct {
 	done chan struct{}
 }
 
-func NewStreamUploader(reader io.Reader, cc Driver, opts ...UploaderOption) *StreamUploader {
+func NewStreamUploader(reader io.Reader, cc Appender, opts ...UploaderOption) *StreamUploader {
 	opt := uploaderOptions{
 		readBuffSize:    4096,
 		uploadChunkSize: 1024,
@@ -83,13 +84,6 @@ func NewStreamUploader(reader io.Reader, cc Driver, opts ...UploaderOption) *Str
 
 func (u *StreamUploader) Done() <-chan struct{} {
 	return u.done
-}
-
-func (u *StreamUploader) delete(ctx context.Context, id string) error {
-	if u.cc == nil {
-		return nil
-	}
-	return u.cc.Delete(ctx, id)
 }
 
 func (u *StreamUploader) append(ctx context.Context, id string, data []byte) error {
@@ -131,35 +125,30 @@ func (u *StreamUploader) readline(ctx context.Context, id string) (err error) {
 	return err
 }
 
-func (u *StreamUploader) readAndUpload(ctx context.Context, id string) error {
-	if err := u.readline(ctx, id); err != nil {
-		if err == io.EOF {
-			if uploadErr := u.upload(ctx, id); uploadErr != nil {
-				return err
-			}
-			// return io EOF
+func (u *StreamUploader) Run(ctx context.Context, id string) (err error) {
+	defer func() {
+		if finishErr := finish(u.cc, ctx, id); finishErr != nil {
+			err = errors.Join(err, finishErr)
 		}
-		return err
-	}
-	return nil
-}
+		close(u.done)
+	}()
 
-func (u *StreamUploader) Run(ctx context.Context, id string) error {
-	defer close(u.done)
-	if err := u.delete(ctx, id); err != nil {
+	if err = del(u.cc, ctx, id); err != nil {
 		return err
 	}
+
 	if len(u.opts.desc) > 0 {
-		if err := u.append(ctx, id, u.opts.desc); err != nil {
+		if err = u.append(ctx, id, u.opts.desc); err != nil {
 			return err
 		}
 	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			if err := u.readline(ctx, id); err != nil {
+			if err = u.readline(ctx, id); err != nil {
 				if err == io.EOF {
 					return u.upload(ctx, id)
 				}

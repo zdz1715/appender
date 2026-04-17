@@ -3,13 +3,14 @@ package appender
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"time"
 )
 
 type FileFollower struct {
-	cc   Driver
+	cc   Appender
 	opts uploaderOptions
 
 	filename string
@@ -26,7 +27,7 @@ type FileFollower struct {
 	done chan struct{}
 }
 
-func NewFileFollower(filename string, cc Driver, opts ...UploaderOption) *FileFollower {
+func NewFileFollower(filename string, cc Appender, opts ...UploaderOption) *FileFollower {
 	opt := uploaderOptions{
 		readBuffSize:    4096,
 		uploadChunkSize: 1024,
@@ -42,6 +43,7 @@ func NewFileFollower(filename string, cc Driver, opts ...UploaderOption) *FileFo
 		opts:     opt,
 		filename: filename,
 		lines:    make([]byte, 0, opt.uploadChunkSize),
+		done:     make(chan struct{}),
 	}
 }
 
@@ -49,15 +51,17 @@ func (f *FileFollower) Done() <-chan struct{} {
 	return f.done
 }
 
-func (f *FileFollower) close() {
+func (f *FileFollower) close() error {
 	if f.file != nil {
-		_ = f.file.Close()
+		return f.file.Close()
 	}
+	return nil
 }
 
 func (f *FileFollower) reopen() error {
-	f.close()
-	var err error
+	if err := f.close(); err != nil {
+		return err
+	}
 	file, err := os.Open(f.filename)
 	if err != nil {
 		return err
@@ -104,13 +108,6 @@ func (f *FileFollower) offset() error {
 	return nil
 }
 
-func (f *FileFollower) delete(ctx context.Context, id string) error {
-	if f.cc == nil {
-		return nil
-	}
-	return f.cc.Delete(ctx, id)
-}
-
 func (f *FileFollower) append(ctx context.Context, id string, data []byte) error {
 	if f.cc == nil || len(data) == 0 {
 		return nil
@@ -151,16 +148,25 @@ func (f *FileFollower) readline(ctx context.Context, id string) (err error) {
 	return err
 }
 
-func (f *FileFollower) RunFrom(ctx context.Context, id string, offset int64, stop <-chan struct{}) error {
-	defer f.close()
+func (f *FileFollower) RunFrom(ctx context.Context, id string, offset int64, stop <-chan struct{}) (err error) {
+	defer func() {
+		if finishErr := finish(f.cc, ctx, id); finishErr != nil {
+			err = errors.Join(err, finishErr)
+		}
+		if closeErr := f.close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+		close(f.done)
+	}()
+
 	// Seek to the starting offset
-	if err := f.reset(offset); err != nil {
+	if err = f.reset(offset); err != nil {
 		return err
 	}
-	if err := f.delete(ctx, id); err != nil {
+	if err = del(f.cc, ctx, id); err != nil {
 		return err
 	}
-	if err := f.append(ctx, id, f.opts.desc); err != nil {
+	if err = f.append(ctx, id, f.opts.desc); err != nil {
 		return err
 	}
 	for {
@@ -169,7 +175,7 @@ func (f *FileFollower) RunFrom(ctx context.Context, id string, offset int64, sto
 			return ctx.Err()
 		case <-stop:
 			// refresh file content when stop
-			if err := f.offset(); err != nil {
+			if err = f.offset(); err != nil {
 				return err
 			}
 
@@ -178,7 +184,7 @@ func (f *FileFollower) RunFrom(ctx context.Context, id string, offset int64, sto
 				case <-ctx.Done():
 					return ctx.Err()
 				default:
-					if err := f.readline(ctx, id); err != nil {
+					if err = f.readline(ctx, id); err != nil {
 						if err == io.EOF {
 							return f.upload(ctx, id)
 						}
@@ -187,12 +193,12 @@ func (f *FileFollower) RunFrom(ctx context.Context, id string, offset int64, sto
 				}
 			}
 		default:
-			if err := f.readline(ctx, id); err != nil {
+			if err = f.readline(ctx, id); err != nil {
 				if err != io.EOF {
 					return err
 				}
 			}
-			if err := f.offset(); err != nil {
+			if err = f.offset(); err != nil {
 				return err
 			}
 			// file is always EOF
