@@ -3,6 +3,7 @@ package appender
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -206,4 +207,150 @@ func TestStreamUploaderNilDriver(t *testing.T) {
 		t.Fatalf("Run failed: %v", err)
 	}
 	// Should complete without error even with nil driver
+}
+
+func TestStreamUploaderWithLinePrefix(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Basic line prefix", func(t *testing.T) {
+		mock := &mockDriver{}
+		input := "Line 1\nLine 2\nLine 3\n"
+		reader := strings.NewReader(input)
+
+		uploader := NewStreamUploader(
+			reader,
+			mock,
+			WithUploadChunkSize(100),
+			WithLinePrefix(func(lineNum int64, readLen int64) []byte {
+				return []byte(fmt.Sprintf("[%d] ", lineNum))
+			}),
+		)
+
+		go func() {
+			if err := uploader.Run(ctx, "test-prefix"); err != nil {
+				t.Error(err)
+			}
+		}()
+
+		<-uploader.Done() // Wait for upload to complete
+
+		expected := "[1] Line 1\n[2] Line 2\n[3] Line 3\n"
+		if string(mock.data) != expected {
+			t.Errorf("Expected %q, got %q", expected, string(mock.data))
+		}
+	})
+
+	t.Run("Prefix with read length", func(t *testing.T) {
+		mock := &mockDriver{}
+		input := "Hello\nWorld\n"
+		reader := strings.NewReader(input)
+
+		uploader := NewStreamUploader(
+			reader,
+			mock,
+			WithUploadChunkSize(100),
+			WithLinePrefix(func(lineNum int64, readLen int64) []byte {
+				return []byte(fmt.Sprintf("L%d-%d|", lineNum, readLen))
+			}),
+		)
+
+		go func() {
+			if err := uploader.Run(ctx, "test-prefix-len"); err != nil {
+				t.Error(err)
+			}
+		}()
+
+		<-uploader.Done()
+
+		expected := "L1-6|Hello\nL2-12|World\n"
+		if string(mock.data) != expected {
+			t.Errorf("Expected %q, got %q", expected, string(mock.data))
+		}
+	})
+
+	t.Run("Empty prefix", func(t *testing.T) {
+		mock := &mockDriver{}
+		input := "Line 1\n"
+		reader := strings.NewReader(input)
+
+		uploader := NewStreamUploader(
+			reader,
+			mock,
+			WithUploadChunkSize(100),
+			WithLinePrefix(func(lineNum int64, readLen int64) []byte {
+				return []byte("")
+			}),
+		)
+
+		go func() {
+			if err := uploader.Run(ctx, "test-empty-prefix"); err != nil {
+				t.Error(err)
+			}
+		}()
+
+		<-uploader.Done()
+
+		expected := "Line 1\n"
+		if string(mock.data) != expected {
+			t.Errorf("Expected %q, got %q", expected, string(mock.data))
+		}
+	})
+
+	t.Run("Prefix with description", func(t *testing.T) {
+		mock := &mockDriver{}
+		input := "Data\n"
+		reader := strings.NewReader(input)
+		desc := []byte("# Log\n")
+
+		uploader := NewStreamUploader(
+			reader,
+			mock,
+			WithDesc(desc),
+			WithUploadChunkSize(100),
+			WithLinePrefix(func(lineNum int64, readLen int64) []byte {
+				return []byte(fmt.Sprintf("[%d] ", lineNum))
+			}),
+		)
+
+		go func() {
+			if err := uploader.Run(ctx, "test-desc-prefix"); err != nil {
+				t.Error(err)
+			}
+		}()
+
+		<-uploader.Done()
+
+		expected := "# Log\n[1] Data\n"
+		if string(mock.data) != expected {
+			t.Errorf("Expected %q, got %q", expected, string(mock.data))
+		}
+	})
+
+	t.Run("Multiple chunks with prefix", func(t *testing.T) {
+		mock := &mockDriver{}
+		input := "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n"
+		reader := strings.NewReader(input)
+
+		uploader := NewStreamUploader(
+			reader,
+			mock,
+			WithUploadChunkSize(15), // Each chunk will contain ~1.5 lines
+			WithLinePrefix(func(lineNum int64, readLen int64) []byte {
+				return []byte(fmt.Sprintf("LINE%d ", lineNum))
+			}),
+		)
+
+		go func() {
+			if err := uploader.Run(ctx, "test-multi-chunk"); err != nil {
+				t.Error(err)
+			}
+		}()
+
+		<-uploader.Done()
+
+		expected := "LINE1 1\nLINE2 2\nLINE3 3\nLINE4 4\nLINE5 5\nLINE6 6\nLINE7 7\nLINE8 8\nLINE9 9\nLINE10 10\n"
+		if string(mock.data) != expected {
+			t.Errorf("Expected %q, got %q", expected, string(mock.data))
+		}
+	})
 }

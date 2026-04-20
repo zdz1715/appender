@@ -13,13 +13,20 @@ type uploaderOptions struct {
 	readBuffSize    int
 	interval        time.Duration
 	desc            []byte
+	linePrefixFunc  func(lineNum int64, readLen int64) []byte
 }
 
 type UploaderOption func(*uploaderOptions)
 
 func WithDesc(desc []byte) UploaderOption {
 	return func(o *uploaderOptions) {
-		o.desc = desc
+		o.desc = append(o.desc, desc...)
+	}
+}
+
+func WithLinePrefix(prefixFunc func(lineNum int64, readLen int64) []byte) UploaderOption {
+	return func(o *uploaderOptions) {
+		o.linePrefixFunc = prefixFunc
 	}
 }
 
@@ -53,8 +60,9 @@ type StreamUploader struct {
 
 	reader *bufio.Reader
 
-	lines   []byte
-	readLen int64
+	lines          []byte
+	readLen        int64
+	currentLineNum int64
 
 	uploadOffset   int64
 	lastUploadTime time.Time
@@ -119,7 +127,14 @@ func (u *StreamUploader) readline(ctx context.Context, id string) (err error) {
 	}
 	line, err := u.reader.ReadBytes('\n')
 	if err == nil && len(line) > 0 {
+		u.currentLineNum++
 		u.readLen += int64(len(line))
+		if u.opts.linePrefixFunc != nil {
+			prefix := u.opts.linePrefixFunc(u.currentLineNum, u.readLen)
+			if len(prefix) > 0 {
+				u.lines = append(u.lines, prefix...)
+			}
+		}
 		u.lines = append(u.lines, line...)
 	}
 	return err

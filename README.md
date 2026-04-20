@@ -242,6 +242,26 @@ appender.WithDesc([]byte("# Log File\n"))
 appender.WithDesc([]byte(fmt.Sprintf("Created at: %s\n", time.Now())))
 ```
 
+#### WithLinePrefix
+
+```go
+// 添加每行前缀
+// 注意：此功能目前仅支持 StreamUploader，不支持 FileFollower
+appender.WithLinePrefix(func(lineNum int64, readLen int64) []byte {
+    return []byte(fmt.Sprintf("[%d][%d] ", lineNum, readLen))
+})
+
+// 示例：添加行号
+appender.WithLinePrefix(func(lineNum int64, readLen int64) []byte {
+    return []byte(fmt.Sprintf("[%d] ", lineNum))
+})
+
+// 示例：添加时间戳
+appender.WithLinePrefix(func(lineNum int64, readLen int64) []byte {
+    return []byte(fmt.Sprintf("[%s] ", time.Now().Format("15:04:05")))
+})
+```
+
 ## 已知限制
 
 ### 1. 并发安全
